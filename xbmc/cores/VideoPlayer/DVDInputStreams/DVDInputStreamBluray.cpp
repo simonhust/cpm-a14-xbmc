@@ -339,6 +339,7 @@ bool CDVDInputStreamBluray::Open()
   {
     // resuming a bluray for which we have a saved state - the playlist will be open later on SetState
     m_navmode = false;
+    m_isResuming = true;
     return true;
   }
   else
@@ -565,6 +566,11 @@ void CDVDInputStreamBluray::ProcessEvent() {
     pid = -1;
     if (m_titleInfo && m_clip && static_cast<uint32_t>(m_clip->audio_stream_count) > (m_event.param - 1))
       pid = m_clip->audio_streams[m_event.param - 1].pid;
+    if (m_isResuming)
+    {
+        bd_select_stream(m_bd, BLURAY_AUDIO_STREAM, pid, 1); 
+        CLog::Log(LOGDEBUG, "CDVDInputStreamBluray::BD_EVENT_AUDIO_STREAM - selected audio stream (pid: {}) in resume mode", pid);
+    }
     CLog::Log(LOGDEBUG, "CDVDInputStreamBluray - BD_EVENT_AUDIO_STREAM {} {}", m_event.param, pid);
     m_player->OnDiscNavResult(static_cast<void*>(&pid), BD_EVENT_AUDIO_STREAM);
     break;
@@ -579,6 +585,11 @@ void CDVDInputStreamBluray::ProcessEvent() {
     pid = -1;
     if (m_titleInfo && m_clip && static_cast<uint32_t>(m_clip->pg_stream_count) > (m_event.param - 1))
       pid = m_clip->pg_streams[m_event.param - 1].pid;
+    if (m_isResuming)
+    {
+        bd_select_stream(m_bd, BLURAY_PG_TEXTST_STREAM, pid, 1); 
+        CLog::Log(LOGDEBUG, "CDVDInputStreamBluray::BD_EVENT_PG_TEXTST_STREAM - selected subtitle stream (pid: {}) in resume mode", pid);
+    }
     CLog::Log(LOGDEBUG, "CDVDInputStreamBluray - BD_EVENT_PG_TEXTST_STREAM {}, {}", m_event.param,
               pid);
     m_player->OnDiscNavResult(static_cast<void*>(&pid), BD_EVENT_PG_TEXTST_STREAM);
@@ -1500,6 +1511,10 @@ bool CDVDInputStreamBluray::SetState(const std::string& xmlstate)
     CLog::LogF(LOGERROR, "Open - failed to select playlist {}", m_titleInfo->idx);
     return false;
   }
-
+  
+  if (bd_select_stream(m_bd, BLURAY_AUDIO_STREAM, 1, 1) != 0)
+  {
+      CLog::Log(LOGWARNING, "Failed to select first audio stream");
+  }
   return true;
 }
