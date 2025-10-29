@@ -1512,9 +1512,6 @@ bool CDVDInputStreamBluray::SetState(const std::string& xmlstate)
     return false;
   }
   
-  if (bd_select_stream(m_bd, BLURAY_AUDIO_STREAM, 1, 1) != 0)
-  {
-      CLog::Log(LOGWARNING, "Failed to select first audio stream");
-  }
+  bd_select_stream(m_bd, BLURAY_AUDIO_STREAM, 1, 1);
   return true;
 }
