@@ -1512,6 +1512,5 @@ bool CDVDInputStreamBluray::SetState(const std::string& xmlstate)
     return false;
   }
   
-  bd_select_stream(m_bd, BLURAY_AUDIO_STREAM, 1, 1);
   return true;
 }

@@ -67,6 +67,7 @@ public:
   bool IsEOF() override;
   int64_t GetLength() override;
   int GetBlockSize() override { return 6144; }
+  bool IsResuming() const { return m_isResuming; }
   ENextStream NextStream() override;
 
 
