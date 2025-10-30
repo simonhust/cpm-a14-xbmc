@@ -3991,14 +3991,14 @@ bool CVideoPlayer::OpenVideoStream(CDVDStreamInfo& hint, bool reset)
 
   SetAVChange("OpenVideoStream");
   
-  if (m_pInputStream && m_pInputStream->GetStreamType() == DVDSTREAM_TYPE_BLURAY)
+  if (m_pInputStream && m_pInputStream->IsStreamType(DVDSTREAM_TYPE_BLURAY))
   {
-      CDVDInputStreamBluray* blurayStream = dynamic_cast<CDVDInputStreamBluray*>(m_pInputStream);
-      if (blurayStream && blurayStream->IsResuming())
-      {
-          SetAudioStream(1);
-          CLog::Log(LOGDEBUG, "CVideoPlayer::OpenVideoStream - use the first audiotrack as default",);
-      }
+    CDVDInputStreamBluray* blurayStream = dynamic_cast<CDVDInputStreamBluray*>(m_pInputStream.get());
+    if (blurayStream && blurayStream->IsResuming())
+    {
+      SetAudioStream(1);
+      CLog::Log(LOGDEBUG, "CVideoPlayer::OpenVideoStream - use the first audiotrack as default");
+    }
   }
     
   return true;
