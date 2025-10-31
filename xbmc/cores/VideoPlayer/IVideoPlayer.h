@@ -12,6 +12,8 @@
 #include "ServiceBroker.h"
 #include "cores/DataCacheCore.h"
 
+#include <libavutil/pixfmt.h>
+
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,7 +35,7 @@ public:
   virtual int OnDiscNavResult(void* pData, int iMessage) = 0;
   virtual void GetVideoResolution(unsigned int &width, unsigned int &height) = 0;
   virtual ~IVideoPlayer() = default;
-  virtual int GetVideoColorSpace() const = 0;
+  virtual AVColorSpace GetVideoColorSpace() const = 0;
 };
 
 class IDVDStreamPlayer
