@@ -71,7 +71,7 @@ public:
   bool IsResuming() const { return m_isResuming; }
   ENextStream NextStream() override;
   
-  int GetVideoColorSpace()
+  AVColorSpace GetVideoColorSpace()
   {
       if (m_player)
       {
