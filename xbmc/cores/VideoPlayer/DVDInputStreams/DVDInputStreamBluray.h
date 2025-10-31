@@ -12,6 +12,8 @@
 #include "DVDInputStream.h"
 #include "cores/VideoPlayer/VideoPlayer.h"
 
+#include <libavutil/pixfmt.h>
+
 #include <list>
 #include <memory>
 #include <queue>
