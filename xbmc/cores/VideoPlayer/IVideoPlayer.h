@@ -33,6 +33,7 @@ public:
   virtual int OnDiscNavResult(void* pData, int iMessage) = 0;
   virtual void GetVideoResolution(unsigned int &width, unsigned int &height) = 0;
   virtual ~IVideoPlayer() = default;
+  virtual int GetVideoColorSpace() const = 0;
 };
 
 class IDVDStreamPlayer
