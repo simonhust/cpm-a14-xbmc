@@ -71,7 +71,7 @@ public:
   bool IsResuming() const { return m_isResuming; }
   ENextStream NextStream() override;
   
-  int CDVDInputStreamBluray::GetVideoColorSpace()
+  int GetVideoColorSpace()
   {
       if (m_player)
       {
