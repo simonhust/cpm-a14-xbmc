@@ -118,5 +118,5 @@ protected:
 private:
   void SetProcessInfoVideoDetails();
   
-  int m_cachedColorSpace = AVCOL_SPC_UNSPECIFIED;
+  AVColorSpace m_cachedColorSpace = AVCOL_SPC_UNSPECIFIED;
 };
