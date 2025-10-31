@@ -21,9 +21,12 @@
 #include "cores/MenuType.h"
 #include "cores/VideoPlayer/Interface/TimingConstants.h"
 #include "cores/VideoPlayer/VideoRenderers/RenderManager.h"
+#include "cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecFFmpeg.h"
 #include "guilib/DispResource.h"
 #include "threads/SystemClock.h"
 #include "threads/Thread.h"
+
+#include <libavutil/pixfmt.h>
 
 #include <atomic>
 #include <chrono>
@@ -58,6 +61,7 @@ struct SPlayerState
     cache_offset = 0.0;
     lastSeek = 0;
     streamsReady = false;
+    colorSpace = AVCOL_SPC_UNSPECIFIED;
   }
 
   double timestamp;         // last time of update
@@ -87,6 +91,8 @@ struct SPlayerState
   double cache_level; // current cache level
   double cache_offset; // percentage of file ahead of current position
   double cache_time; // estimated playback time of current cached bytes
+  
+  int colorSpace;
 };
 
 class CDVDInputStream;
@@ -253,6 +259,9 @@ class CVideoPlayer : public IPlayer, public CThread, public IVideoPlayer,
 private:  
   void SetAVChange(std::string from);
   
+  int m_videoColorSpace = AVCOL_SPC_UNSPECIFIED;
+  mutable CCriticalSection m_colorSpaceSection;
+  
 public:
   explicit CVideoPlayer(IPlayerCallback& callback);
   ~CVideoPlayer() override;
@@ -270,6 +279,12 @@ public:
   bool SeekScene(bool bPlus = true) override;
   void SeekPercentage(float iPercent) override;
   float GetCachePercentage() const override;
+  
+  int GetVideoColorSpace() const 
+  { 
+    CSingleLock lock(m_colorSpaceSection);
+    return m_videoColorSpace; 
+  }
 
   void SetDynamicRangeCompression(long drc) override;
   bool CanPause() const override;

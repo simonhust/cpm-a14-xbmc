@@ -10,6 +10,7 @@
 
 #include "BlurayStateSerializer.h"
 #include "DVDInputStream.h"
+#include "cores/VideoPlayer/VideoPlayer.h"
 
 #include <list>
 #include <memory>
@@ -69,7 +70,15 @@ public:
   int GetBlockSize() override { return 6144; }
   bool IsResuming() const { return m_isResuming; }
   ENextStream NextStream() override;
-
+  
+  int CDVDInputStreamBluray::GetVideoColorSpace()
+  {
+      if (m_player)
+      {
+          return m_player->GetVideoColorSpace();
+      }
+      return AVCOL_SPC_BT709;
+  }
 
   /* IMenus */
   void ActivateButton() override { UserInput(BD_VK_ENTER); }

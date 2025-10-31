@@ -754,16 +754,60 @@ static uint8_t  clamp(double v)
   return (v) > 255.0 ? 255 : ((v) < 0.0 ? 0 : static_cast<uint32_t>((v + 0.5)));
 }
 
-static uint32_t build_rgba(const BD_PG_PALETTE_ENTRY &e)
+static const struct ColorConversionMatrix {
+    double kr, kg, kb;
+    double yr, yg, yb;
+    double cr_r, cr_g, cr_b;
+    double cb_r, cb_g, cb_b;
+} matrices[] = {
+    // BT.709 
+    {0.2126, 0.7152, 0.0722,    // kr, kg, kb
+     1.0, 1.0, 1.0,             // yr, yg, yb
+     0.0, -0.214821, 2.12798,   // cr_r, cr_g, cr_b
+     1.28033, -0.38058, 0.0},   // cb_r, cb_g, cb_b
+     
+    // BT.2020 
+    {0.2627, 0.6780, 0.0593,    // kr, kg, kb
+     1.0, 1.0, 1.0,             // yr, yg, yb
+     0.0, -0.224753, 2.02345,   // cr_r, cr_g, cr_b
+     1.48136, -0.311664, 0.0}   // cb_r, cb_g, cb_b
+};
+
+static const ColorConversionMatrix* GetConversionMatrix(int colorSpace)
 {
-  double r = 1.164 * (e.Y - 16)                        + 1.596 * (e.Cr - 128);
-  double g = 1.164 * (e.Y - 16) - 0.391 * (e.Cb - 128) - 0.813 * (e.Cr - 128);
-  double b = 1.164 * (e.Y - 16) + 2.018 * (e.Cb - 128);
-  return static_cast<uint32_t>(e.T)      << PIXEL_ASHIFT
-       | static_cast<uint32_t>(clamp(r)) << PIXEL_RSHIFT
-       | static_cast<uint32_t>(clamp(g)) << PIXEL_GSHIFT
-       | static_cast<uint32_t>(clamp(b)) << PIXEL_BSHIFT;
+    switch (colorSpace)
+    {
+        case AVCOL_SPC_BT2020_NCL:
+        case AVCOL_SPC_BT2020_CL:
+            return &matrices[1]; // BT.2020
+        case AVCOL_SPC_BT709:
+        default:
+            return &matrices[0]; // BT.709 （default)
+    }
 }
+
+static uint32_t build_rgba(const BD_PG_PALETTE_ENTRY &e, int colorSpace)
+{
+    const ColorConversionMatrix* matrix = GetConversionMatrix(colorSpace);
+    
+    double Y = e.Y - 16;
+    double Cb = e.Cb - 128;
+    double Cr = e.Cr - 128;
+    
+    double r = matrix->yr * Y + matrix->cr_r * Cr;
+    double g = matrix->yg * Y + matrix->cb_g * Cb + matrix->cr_g * Cr;
+    double b = matrix->yb * Y + matrix->cb_b * Cb;
+    
+    auto clamp = [](double val) {
+        return std::max(0.0, std::min(255.0, val));
+    };
+    
+    return static_cast<uint32_t>(e.T)      << PIXEL_ASHIFT
+         | static_cast<uint32_t>(clamp(r)) << PIXEL_RSHIFT
+         | static_cast<uint32_t>(clamp(g)) << PIXEL_GSHIFT
+         | static_cast<uint32_t>(clamp(b)) << PIXEL_BSHIFT;
+}
+
 
 void CDVDInputStreamBluray::OverlayClose()
 {

@@ -1177,6 +1177,30 @@ bool CDVDVideoCodecFFmpeg::GetPictureCommon(VideoPicture* pVideoPicture)
     else
       pVideoPicture->color_primaries = AVCOL_PRI_BT470BG;
   }
+  
+  pVideoPicture->chroma_position = m_pCodecContext->chroma_sample_location;
+  pVideoPicture->color_primaries = m_pCodecContext->color_primaries == AVCOL_PRI_UNSPECIFIED 
+      ? m_hints.colorPrimaries 
+      : m_pCodecContext->color_primaries;
+  pVideoPicture->m_originalColorPrimaries = pVideoPicture->color_primaries;
+  pVideoPicture->color_transfer = m_pCodecContext->color_trc == AVCOL_TRC_UNSPECIFIED 
+      ? m_hints.colorTransferCharacteristic 
+      : m_pCodecContext->color_trc;
+
+  int currentColorSpace = m_pCodecContext->colorspace == AVCOL_SPC_UNSPECIFIED 
+      ? m_hints.colorSpace 
+      : m_pCodecContext->colorspace;
+
+
+  if (currentColorSpace != m_cachedColorSpace)
+  {
+      m_cachedColorSpace = currentColorSpace; 
+      pVideoPicture->color_space = currentColorSpace;
+  }
+  else
+  {
+      pVideoPicture->color_space = m_cachedColorSpace;
+  }
 
   return true;
 }
