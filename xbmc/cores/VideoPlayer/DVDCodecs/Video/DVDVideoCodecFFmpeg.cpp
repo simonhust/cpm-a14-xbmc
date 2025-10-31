@@ -1187,7 +1187,7 @@ bool CDVDVideoCodecFFmpeg::GetPictureCommon(VideoPicture* pVideoPicture)
       ? m_hints.colorTransferCharacteristic 
       : m_pCodecContext->color_trc;
 
-  int currentColorSpace = m_pCodecContext->colorspace == AVCOL_SPC_UNSPECIFIED 
+  AVColorSpace currentColorSpace = m_pCodecContext->colorspace == AVCOL_SPC_UNSPECIFIED 
       ? m_hints.colorSpace 
       : m_pCodecContext->colorspace;
 
