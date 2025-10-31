@@ -25,6 +25,7 @@
 #include "guilib/DispResource.h"
 #include "threads/SystemClock.h"
 #include "threads/Thread.h"
+#include "threads/CriticalSection.h"
 
 #include <libavutil/pixfmt.h>
 
