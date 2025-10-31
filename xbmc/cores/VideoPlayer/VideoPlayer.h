@@ -260,7 +260,7 @@ class CVideoPlayer : public IPlayer, public CThread, public IVideoPlayer,
 private:  
   void SetAVChange(std::string from);
   
-  int m_videoColorSpace = AVCOL_SPC_UNSPECIFIED;
+  AVColorSpace m_videoColorSpace = AVCOL_SPC_UNSPECIFIED;
   mutable CCriticalSection m_colorSpaceSection;
   
 public:
@@ -281,7 +281,7 @@ public:
   void SeekPercentage(float iPercent) override;
   float GetCachePercentage() const override;
   
-  int GetVideoColorSpace() const 
+  AVColorSpace GetVideoColorSpace() const 
   { 
     std::unique_lock<CCriticalSection> lock(m_colorSpaceSection);
     return m_videoColorSpace; 
