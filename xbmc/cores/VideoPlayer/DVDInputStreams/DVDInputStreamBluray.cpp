@@ -930,7 +930,7 @@ void CDVDInputStreamBluray::OverlayCallback(const BD_OVERLAY * const ov)
       overlay->palette.resize(256);
 
       for(unsigned i = 0; i < 256; i++)
-        overlay->palette[i] = build_rgba(ov->palette[i]);
+        overlay->palette[i] = build_rgba(ov->palette[i], static_cast<int>(GetVideoColorSpace()));
     }
     else
       overlay->palette.clear();
