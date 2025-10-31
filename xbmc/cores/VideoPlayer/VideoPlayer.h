@@ -283,7 +283,7 @@ public:
   
   int GetVideoColorSpace() const 
   { 
-    CSingleLock lock(m_colorSpaceSection);
+    XbmcThreads::CSingleLock lock(m_colorSpaceSection);
     return m_videoColorSpace; 
   }
 
