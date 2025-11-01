@@ -5,6 +5,8 @@
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *  See LICENSES/README.md for more information.
  */
+#include "settings/Settings.h"
+#include "settings/SubtitlesSettings.h"
 
 #include "DVDInputStreamBluray.h"
 
@@ -834,71 +836,98 @@ static uint32_t build_rgba(const BD_PG_PALETTE_ENTRY &e,
   double cb = e.Cb - 128;
   double cr = e.Cr - 128;
 
-  // 1. 根据视频格式选择YUV→RGB转换矩阵（保持原有逻辑）
-  switch(videoFormat)
-  {
-    case BLURAY_VIDEO_FORMAT_480I:
-    case BLURAY_VIDEO_FORMAT_576I:
-    case BLURAY_VIDEO_FORMAT_480P:
-    case BLURAY_VIDEO_FORMAT_576P:
-      // BT.601矩阵
-      r = 1.164 * y + 0.000 * cb + 1.596 * cr;
-      g = 1.164 * y - 0.391 * cb - 0.813 * cr;
-      b = 1.164 * y + 2.018 * cb + 0.000 * cr;
-      break;
-    case BLURAY_VIDEO_FORMAT_720P:
-    case BLURAY_VIDEO_FORMAT_1080I:
-    case BLURAY_VIDEO_FORMAT_1080P:
-      // BT.709矩阵
-      r = 1.164 * y + 0.000 * cb + 1.596 * cr;
-      g = 1.164 * y - 0.391 * cb - 0.813 * cr;
-      b = 1.164 * y + 2.018 * cb + 0.000 * cr;
-      break;
-    case BLURAY_VIDEO_FORMAT_2160P:
-      // BT.2020矩阵
-      r = 1.164 * y + 0.000 * cb + 1.678 * cr;
-      g = 1.164 * y - 0.187 * cb - 0.650 * cr;
-      b = 1.164 * y + 2.142 * cb + 0.000 * cr;
-      break;
-    default:
-      // 默认BT.709
-      r = 1.164 * y + 0.000 * cb + 1.596 * cr;
-      g = 1.164 * y - 0.391 * cb - 0.813 * cr;
-      b = 1.164 * y + 2.018 * cb + 0.000 * cr;
-      break;
-  }
+  // 新增：检查 Kodi 是否启用强制 sRGB 转换设置
+  bool forceSRGB = CServiceBroker::GetSettingsComponent()->GetSubtitlesSettings()->ForcePGSSRGB();
 
-  // 2. 根据动态范围类型决定是否进行PQ转换（HDR→SDR）
-  if (dynamicRange == BLURAY_DYNAMIC_RANGE_HDR10 || dynamicRange == BLURAY_DYNAMIC_RANGE_DOLBY_VISION)
+  if (forceSRGB)
   {
-    // PQ（感知量化）转SDR的转换逻辑（简化版，实际需遵循HDR标准）
-    auto pq_to_linear = [](double val) {
-      // 归一化到[0,1]范围
-      val = std::clamp(val / 255.0, 0.0, 1.0);
-      // PQ转换核心公式（参考BT.2100标准）
-      const double m1 = 2610.0 / 16384.0;
-      const double m2 = 2523.0 / 4096.0 * 128.0;
-      const double c1 = 3424.0 / 4096.0;
-      const double c2 = 2413.0 / 4096.0 * 32.0;
-      const double c3 = 2392.0 / 4096.0 * 32.0;
+    CLog::Log(LOGDEBUG, "build_rgba: 使用强制 sRGB 转换");
+    // sRGB 基于 BT.709 矩阵，但伽马校正不同
+    // 1. YUV→RGB 转换（使用 BT.709 矩阵）
+    r = 1.164 * y + 0.000 * cb + 1.596 * cr;
+    g = 1.164 * y - 0.391 * cb - 0.813 * cr;
+    b = 1.164 * y + 2.018 * cb + 0.000 * cr;
 
-      double pq = std::pow(val, 1.0 / m2);
-      pq = std::max(pq - c1, 0.0) / (c2 - c3 * pq);
-      return std::pow(pq, 1.0 / m1); // 线性光值
+    // 2. 应用 sRGB 伽马校正（标准化到 [0,1] 后转换）
+    auto srgb_gamma = [](double val) {
+      val = std::clamp(val / 255.0, 0.0, 1.0); // 归一化到 [0,1]
+      if (val <= 0.0031308)
+        return val * 12.92;
+      else
+        return 1.055 * pow(val, 1.0 / 2.4) - 0.055;
     };
 
-    // 转换后映射到SDR的[0,255]范围
-    r = pq_to_linear(r) * 255.0;
-    g = pq_to_linear(g) * 255.0;
-    b = pq_to_linear(b) * 255.0;
+    r = srgb_gamma(r) * 255.0;
+    g = srgb_gamma(g) * 255.0;
+    b = srgb_gamma(b) * 255.0;
+  }
+  else
+  {
+    // 原有逻辑：根据视频格式选择 YUV→RGB 转换矩阵
+    switch(videoFormat)
+    {
+      case BLURAY_VIDEO_FORMAT_480I:
+      case BLURAY_VIDEO_FORMAT_576I:
+      case BLURAY_VIDEO_FORMAT_480P:
+      case BLURAY_VIDEO_FORMAT_576P:
+        // BT.601 矩阵
+        r = 1.164 * y + 0.000 * cb + 1.596 * cr;
+        g = 1.164 * y - 0.391 * cb - 0.813 * cr;
+        b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+        break;
+      case BLURAY_VIDEO_FORMAT_720P:
+      case BLURAY_VIDEO_FORMAT_1080I:
+      case BLURAY_VIDEO_FORMAT_1080P:
+        // BT.709 矩阵
+        r = 1.164 * y + 0.000 * cb + 1.596 * cr;
+        g = 1.164 * y - 0.391 * cb - 0.813 * cr;
+        b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+        break;
+      case BLURAY_VIDEO_FORMAT_2160P:
+        // BT.2020 矩阵
+        r = 1.164 * y + 0.000 * cb + 1.678 * cr;
+        g = 1.164 * y - 0.187 * cb - 0.650 * cr;
+        b = 1.164 * y + 2.142 * cb + 0.000 * cr;
+        break;
+      default:
+        // 默认 BT.709
+        r = 1.164 * y + 0.000 * cb + 1.596 * cr;
+        g = 1.164 * y - 0.391 * cb - 0.813 * cr;
+        b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+        break;
+    }
+
+    // 原有逻辑：根据动态范围决定是否进行 PQ 转换（HDR→SDR）
+    if (dynamicRange == BLURAY_DYNAMIC_RANGE_HDR10 || dynamicRange == BLURAY_DYNAMIC_RANGE_DOLBY_VISION)
+    {
+      // PQ（感知量化）转 SDR 的转换逻辑
+      auto pq_to_linear = [](double val) {
+        val = std::clamp(val / 255.0, 0.0, 1.0); // 归一化到 [0,1]
+        const double m1 = 2610.0 / 16384.0;
+        const double m2 = 2523.0 / 4096.0 * 128.0;
+        const double c1 = 3424.0 / 4096.0;
+        const double c2 = 2413.0 / 4096.0 * 32.0;
+        const double c3 = 2392.0 / 4096.0 * 32.0;
+
+        double pq = std::pow(val, 1.0 / m2);
+        pq = std::max(pq - c1, 0.0) / (c2 - c3 * pq);
+        return std::pow(pq, 1.0 / m1); // 线性光值
+      };
+
+      // 转换后映射到 SDR 的 [0,255] 范围
+      r = pq_to_linear(r) * 255.0;
+      g = pq_to_linear(g) * 255.0;
+      b = pq_to_linear(b) * 255.0;
+    }
   }
 
-  //  clamping确保值在[0,255]
+  // 确保值在 [0,255] 范围内
   return static_cast<uint32_t>(e.T)      << PIXEL_ASHIFT
        | static_cast<uint32_t>(clamp(r)) << PIXEL_RSHIFT
        | static_cast<uint32_t>(clamp(g)) << PIXEL_GSHIFT
        | static_cast<uint32_t>(clamp(b)) << PIXEL_BSHIFT;
 }
+
 
 void CDVDInputStreamBluray::OverlayClose()
 {

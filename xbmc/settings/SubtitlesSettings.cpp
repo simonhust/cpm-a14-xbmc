@@ -46,6 +46,11 @@ CSubtitlesSettings::~CSubtitlesSettings()
   m_settings->UnregisterCallback(this);
 }
 
+bool CSubtitlesSettings::ForcePGSSRGB()
+{
+  return m_settings->GetBool(CSettings::SETTING_SUBTITLES_FORCEPGSSRGB);
+}
+
 void CSubtitlesSettings::OnSettingChanged(const std::shared_ptr<const CSetting>& setting)
 {
   if (setting == nullptr)

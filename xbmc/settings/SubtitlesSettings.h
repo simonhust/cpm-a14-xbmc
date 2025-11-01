@@ -195,6 +195,12 @@ public:
    * \return The vertical margin in %
    */
   float GetVerticalMarginPerc();
+  
+  /*!
+   * \brief Check if PGS subtitles should use sRGB color space
+   * \return True if forced sRGB is enabled, otherwise false
+   */
+  bool ForcePGSSRGB();
 
   static void SettingOptionsSubtitleFontsFiller(const std::shared_ptr<const CSetting>& setting,
                                                 std::vector<StringSettingOption>& list,

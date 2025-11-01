@@ -968,6 +968,9 @@
             <show more="true" details="true">installed</show>
           </control>
         </setting>
+        <setting id="subtitles.forcepgssrgb" type="bool" label="force sRGB">
+          <default>false</default>
+        </setting>
       </group>
     </category>
   </section>
