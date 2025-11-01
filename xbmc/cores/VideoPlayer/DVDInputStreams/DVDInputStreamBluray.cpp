@@ -557,14 +557,19 @@ void CDVDInputStreamBluray::ProcessEvent() {
       {
         BLURAY_STREAM_INFO* videoStream = &m_clip->video_streams[i];
         
-        // 确保当前流是视频类型（coding_type对应bd_stream_type_e中的视频类型）
-        if (videoStream->coding_type != BD_STREAM_TYPE_VIDEO)
+        // 修正：判断是否为视频流（检查所有视频编码类型）
+        bool isVideoStream = (videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_MPEG1 ||
+                              videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_MPEG2 ||
+                              videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_VC1 ||
+                              videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_H264 ||
+                              videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_HEVC);
+        if (!isVideoStream)
           continue;
   
         // 优先匹配主视频流PID，若未找到则用第一个视频流
         if (videoStream->pid == HDMV_PID_VIDEO || (!foundPrimaryStream && i == 0))
         {
-          // 修正：用format字段获取视频格式（bd_video_format_e）
+          // 用format字段获取视频格式（bd_video_format_e）
           bd_video_format_e newVideoFormat = static_cast<bd_video_format_e>(videoStream->format);
           if (newVideoFormat != m_videoFormat)
           {
@@ -586,17 +591,10 @@ void CDVDInputStreamBluray::ProcessEvent() {
                       videoStream->pid, formatStr);
           }
   
-          // 兼容：通过视频格式间接判断动态范围（无直接字段时）
-          bd_dynamic_range_type_e newDynamicRange;
-          if (newVideoFormat == BLURAY_VIDEO_FORMAT_2160P)
-          {
-            // 假设2160P为HDR10（需根据实际场景调整）
-            newDynamicRange = BLURAY_DYNAMIC_RANGE_HDR10;
-          }
-          else
-          {
-            newDynamicRange = BLURAY_DYNAMIC_RANGE_SDR;
-          }
+          // 兼容：通过视频格式间接判断动态范围
+          bd_dynamic_range_type_e newDynamicRange = (newVideoFormat == BLURAY_VIDEO_FORMAT_2160P)
+                                                    ? BLURAY_DYNAMIC_RANGE_HDR10
+                                                    : BLURAY_DYNAMIC_RANGE_SDR;
   
           if (newDynamicRange != m_dynamicRange)
           {
@@ -628,7 +626,7 @@ void CDVDInputStreamBluray::ProcessEvent() {
     if (ret)
       m_clipStartTime = clip_start / 90;
     break;
-
+    
   case BD_EVENT_CHAPTER:
     CLog::Log(LOGDEBUG, "CDVDInputStreamBluray - BD_EVENT_CHAPTER {}", m_event.param);
     break;
@@ -1233,7 +1231,7 @@ static bool find_stream(int pid, BLURAY_STREAM_INFO *info, int count, std::strin
 
 void CDVDInputStreamBluray::GetStreamInfo(int pid, std::string &language)
 {
-  if(!m_titleInfo || !m_clip)
+  if (!m_titleInfo || !m_clip)
     return;
 
   if (pid == HDMV_PID_VIDEO || pid == HDMV_PID_VIDEO_EL)
@@ -1244,12 +1242,17 @@ void CDVDInputStreamBluray::GetStreamInfo(int pid, std::string &language)
     {
       BLURAY_STREAM_INFO* videoStream = &m_clip->video_streams[i];
       
+      // 修正：判断是否为视频流（检查所有视频编码类型）
+      bool isVideoStream = (videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_MPEG1 ||
+                            videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_MPEG2 ||
+                            videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_VC1 ||
+                            videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_H264 ||
+                            videoStream->coding_type == BLURAY_STREAM_TYPE_VIDEO_HEVC);
       // 确保是视频流且PID匹配
-      if (videoStream->coding_type != BD_STREAM_TYPE_VIDEO || 
-          videoStream->pid != static_cast<uint16_t>(pid))
+      if (!isVideoStream || videoStream->pid != static_cast<uint16_t>(pid))
         continue;
 
-      // 修正：用format字段获取视频格式（bd_video_format_e）
+      // 用format字段获取视频格式（bd_video_format_e）
       bd_video_format_e newVideoFormat = static_cast<bd_video_format_e>(videoStream->format);
       if (newVideoFormat != m_videoFormat)
       {
@@ -1294,15 +1297,15 @@ void CDVDInputStreamBluray::GetStreamInfo(int pid, std::string &language)
   }
   else if (HDMV_PID_AUDIO_FIRST <= pid && pid <= HDMV_PID_AUDIO_LAST)
     find_stream(pid, m_clip->audio_streams, m_clip->audio_stream_count, language);
-  else if (HDMV_PID_PG_FIRST <= pid && pid <= HDMV_PID_PG_LAST)
-    find_stream(pid, m_clip->pg_streams, m_clip->pg_stream_count, language);
-  else if (HDMV_PID_PG_HDR_FIRST <= pid && pid <= HDMV_PID_PG_HDR_LAST)
+  else if ((HDMV_PID_PG_FIRST <= pid && pid <= HDMV_PID_PG_LAST) || 
+           (HDMV_PID_PG_HDR_FIRST <= pid && pid <= HDMV_PID_PG_HDR_LAST))
     find_stream(pid, m_clip->pg_streams, m_clip->pg_stream_count, language);
   else if (HDMV_PID_IG_FIRST <= pid && pid <= HDMV_PID_IG_LAST)
     find_stream(pid, m_clip->ig_streams, m_clip->ig_stream_count, language);
   else
-    CLog::Log(LOGDEBUG, "CDVDInputStreamBluray::GetStreamInfo - unhandled pid {}", pid);
+    CLog::Log(LOGDEBUG, "CDVDInputStreamBluray::GetStreamInfo - 未处理的PID: {}", pid);
 }
+
 
 CDVDInputStream::ENextStream CDVDInputStreamBluray::NextStream()
 {
