@@ -218,6 +218,9 @@ protected:
     void FreeTitleInfo();
     std::unique_ptr<CDVDInputStreamFile> m_pstream;
     std::string m_rootPath;
+    
+    bd_video_format_e m_videoFormat = BLURAY_VIDEO_FORMAT_1080P;
+    bd_dynamic_range_type_e m_dynamicRange = BLURAY_DYNAMIC_RANGE_SDR;
 
     /*! Bluray state serializer handler */
     CBlurayStateSerializer m_blurayStateSerializer;

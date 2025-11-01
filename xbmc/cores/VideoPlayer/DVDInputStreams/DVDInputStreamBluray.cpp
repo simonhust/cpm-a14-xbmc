@@ -549,7 +549,62 @@ void CDVDInputStreamBluray::ProcessEvent() {
   case BD_EVENT_PLAYITEM:
     CLog::Log(LOGDEBUG, "CDVDInputStreamBluray - BD_EVENT_PLAYITEM {}", m_event.param);
     if (m_titleInfo && m_event.param < m_titleInfo->clip_count)
+    {
       m_clip = &m_titleInfo->clips[m_event.param];
+      bool foundPrimaryStream = false; 
+      for (int i = 0; i < m_clip->video_stream_count; i++)
+      {
+        BLURAY_STREAM_INFO* videoStream = &m_clip->video_streams[i];
+
+        if (videoStream->pid == HDMV_PID_VIDEO || (!foundPrimaryStream && i == 0))
+        {
+          bd_video_format_e newVideoFormat = static_cast<bd_video_format_e>(videoStream->video_format);
+          if (newVideoFormat != m_videoFormat)
+          {
+            m_videoFormat = newVideoFormat;
+            const char* formatStr = nullptr;
+            switch (m_videoFormat)
+            {
+              case BLURAY_VIDEO_FORMAT_480I:  formatStr = "480I (BT.601-5)"; break;
+              case BLURAY_VIDEO_FORMAT_576I:  formatStr = "576I (BT.601-4)"; break;
+              case BLURAY_VIDEO_FORMAT_480P:  formatStr = "480P (SMPTE 293M)"; break;
+              case BLURAY_VIDEO_FORMAT_1080I: formatStr = "1080I (SMPTE 274M)"; break;
+              case BLURAY_VIDEO_FORMAT_720P:  formatStr = "720P (SMPTE 296M)"; break;
+              case BLURAY_VIDEO_FORMAT_1080P: formatStr = "1080P (SMPTE 274M)"; break;
+              case BLURAY_VIDEO_FORMAT_576P:  formatStr = "576P (BT.1358)"; break;
+              case BLURAY_VIDEO_FORMAT_2160P: formatStr = "2160P (BT.2020)"; break;
+              default: formatStr = "未知格式";
+            }
+            CLog::Log(LOGDEBUG, "BD_EVENT_PLAYITEM - 主视频流[PID:{}]色域初始化: {}", 
+                      videoStream->pid, formatStr);
+          }
+          bd_dynamic_range_type_e newDynamicRange = static_cast<bd_dynamic_range_type_e>(videoStream->dynamic_range);
+          if (newDynamicRange != m_dynamicRange)
+          {
+            m_dynamicRange = newDynamicRange;
+            const char* drStr = nullptr;
+            switch (m_dynamicRange)
+            {
+              case BLURAY_DYNAMIC_RANGE_SDR:              drStr = "SDR（无PQ转换）"; break;
+              case BLURAY_DYNAMIC_RANGE_HDR10:            drStr = "HDR10（需PQ转换）"; break;
+              case BLURAY_DYNAMIC_RANGE_DOLBY_VISION:     drStr = "Dolby Vision（需PQ转换）"; break;
+              default: drStr = "未知动态范围";
+            }
+            CLog::Log(LOGDEBUG, "BD_EVENT_PLAYITEM - 主视频流[PID:{}]动态范围初始化: {}", 
+                      videoStream->pid, drStr);
+          }
+
+          foundPrimaryStream = true;
+          break;
+        }
+      }
+      
+      if (!foundPrimaryStream)
+      {
+        CLog::Log(LOGWARNING, "BD_EVENT_PLAYITEM - 当前clip无有效视频流");
+      }
+    }
+
     uint64_t clip_start, clip_in, bytepos;
     ret = bd_get_clip_infos(m_bd, m_event.param, &clip_start, &clip_in, &bytepos, nullptr);
     if (ret)
@@ -754,11 +809,75 @@ static uint8_t  clamp(double v)
   return (v) > 255.0 ? 255 : ((v) < 0.0 ? 0 : static_cast<uint32_t>((v + 0.5)));
 }
 
-static uint32_t build_rgba(const BD_PG_PALETTE_ENTRY &e)
+static uint32_t build_rgba(const BD_PG_PALETTE_ENTRY &e, 
+                          bd_video_format_e videoFormat, 
+                          bd_dynamic_range_type_e dynamicRange)
 {
-  double r = 1.164 * (e.Y - 16)                        + 1.596 * (e.Cr - 128);
-  double g = 1.164 * (e.Y - 16) - 0.391 * (e.Cb - 128) - 0.813 * (e.Cr - 128);
-  double b = 1.164 * (e.Y - 16) + 2.018 * (e.Cb - 128);
+  double r, g, b;
+  double y = e.Y - 16;
+  double cb = e.Cb - 128;
+  double cr = e.Cr - 128;
+
+  // 1. 根据视频格式选择YUV→RGB转换矩阵（保持原有逻辑）
+  switch(videoFormat)
+  {
+    case BLURAY_VIDEO_FORMAT_480I:
+    case BLURAY_VIDEO_FORMAT_576I:
+    case BLURAY_VIDEO_FORMAT_480P:
+    case BLURAY_VIDEO_FORMAT_576P:
+      // BT.601矩阵
+      r = 1.164 * y + 0.000 * cb + 1.596 * cr;
+      g = 1.164 * y - 0.391 * cb - 0.813 * cr;
+      b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+      break;
+    case BLURAY_VIDEO_FORMAT_720P:
+    case BLURAY_VIDEO_FORMAT_1080I:
+    case BLURAY_VIDEO_FORMAT_1080P:
+      // BT.709矩阵
+      r = 1.164 * y + 0.000 * cb + 1.596 * cr;
+      g = 1.164 * y - 0.391 * cb - 0.813 * cr;
+      b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+      break;
+    case BLURAY_VIDEO_FORMAT_2160P:
+      // BT.2020矩阵
+      r = 1.164 * y + 0.000 * cb + 1.678 * cr;
+      g = 1.164 * y - 0.187 * cb - 0.650 * cr;
+      b = 1.164 * y + 2.142 * cb + 0.000 * cr;
+      break;
+    default:
+      // 默认BT.709
+      r = 1.164 * y + 0.000 * cb + 1.596 * cr;
+      g = 1.164 * y - 0.391 * cb - 0.813 * cr;
+      b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+      break;
+  }
+
+  // 2. 根据动态范围类型决定是否进行PQ转换（HDR→SDR）
+  if (dynamicRange == BLURAY_DYNAMIC_RANGE_HDR10 || dynamicRange == BLURAY_DYNAMIC_RANGE_DOLBY_VISION)
+  {
+    // PQ（感知量化）转SDR的转换逻辑（简化版，实际需遵循HDR标准）
+    auto pq_to_linear = [](double val) {
+      // 归一化到[0,1]范围
+      val = std::clamp(val / 255.0, 0.0, 1.0);
+      // PQ转换核心公式（参考BT.2100标准）
+      const double m1 = 2610.0 / 16384.0;
+      const double m2 = 2523.0 / 4096.0 * 128.0;
+      const double c1 = 3424.0 / 4096.0;
+      const double c2 = 2413.0 / 4096.0 * 32.0;
+      const double c3 = 2392.0 / 4096.0 * 32.0;
+
+      double pq = std::pow(val, 1.0 / m2);
+      pq = std::max(pq - c1, 0.0) / (c2 - c3 * pq);
+      return std::pow(pq, 1.0 / m1); // 线性光值
+    };
+
+    // 转换后映射到SDR的[0,255]范围
+    r = pq_to_linear(r) * 255.0;
+    g = pq_to_linear(g) * 255.0;
+    b = pq_to_linear(b) * 255.0;
+  }
+
+  //  clamping确保值在[0,255]
   return static_cast<uint32_t>(e.T)      << PIXEL_ASHIFT
        | static_cast<uint32_t>(clamp(r)) << PIXEL_RSHIFT
        | static_cast<uint32_t>(clamp(g)) << PIXEL_GSHIFT
@@ -885,8 +1004,9 @@ void CDVDInputStreamBluray::OverlayCallback(const BD_OVERLAY * const ov)
     {
       overlay->palette.resize(256);
 
+      // 关键修改：传入视频格式和动态范围参数
       for(unsigned i = 0; i < 256; i++)
-        overlay->palette[i] = build_rgba(ov->palette[i]);
+        overlay->palette[i] = build_rgba(ov->palette[i], m_videoFormat, m_dynamicRange);
     }
     else
       overlay->palette.clear();
@@ -1099,7 +1219,52 @@ void CDVDInputStreamBluray::GetStreamInfo(int pid, std::string &language)
     return;
 
   if (pid == HDMV_PID_VIDEO || pid == HDMV_PID_VIDEO_EL)
+  {
     find_stream(pid, m_clip->video_streams, m_clip->video_stream_count, language);
+    for (int i = 0; i < m_clip->video_stream_count; i++)
+    {
+      BLURAY_STREAM_INFO* videoStream = &m_clip->video_streams[i];
+      if (videoStream->pid == static_cast<uint16_t>(pid))
+      {
+        bd_video_format_e newVideoFormat = static_cast<bd_video_format_e>(videoStream->video_format);
+        if (newVideoFormat != m_videoFormat)
+        {
+          m_videoFormat = newVideoFormat;
+          const char* formatStr = nullptr;
+          switch (m_videoFormat)
+          {
+            case BLURAY_VIDEO_FORMAT_480I:  formatStr = "480I (BT.601-5)"; break;
+            case BLURAY_VIDEO_FORMAT_576I:  formatStr = "576I (BT.601-4)"; break;
+            case BLURAY_VIDEO_FORMAT_480P:  formatStr = "480P (SMPTE 293M)"; break;
+            case BLURAY_VIDEO_FORMAT_1080I: formatStr = "1080I (SMPTE 274M)"; break;
+            case BLURAY_VIDEO_FORMAT_720P:  formatStr = "720P (SMPTE 296M)"; break;
+            case BLURAY_VIDEO_FORMAT_1080P: formatStr = "1080P (SMPTE 274M)"; break;
+            case BLURAY_VIDEO_FORMAT_576P:  formatStr = "576P (BT.1358)"; break;
+            case BLURAY_VIDEO_FORMAT_2160P: formatStr = "2160P (BT.2020)"; break;
+            default: formatStr = "Unknown format";
+          }
+          CLog::Log(LOGDEBUG, "GetStreamInfo - 视频流[PID:{}]色域更新为: {}", pid, formatStr);
+        }
+
+        bd_dynamic_range_type_e newDynamicRange = static_cast<bd_dynamic_range_type_e>(videoStream->dynamic_range);
+        if (newDynamicRange != m_dynamicRange)
+        {
+          m_dynamicRange = newDynamicRange;
+          const char* drStr = nullptr;
+          switch (m_dynamicRange)
+          {
+            case BLURAY_DYNAMIC_RANGE_SDR:              drStr = "SDR（无PQ转换）"; break;
+            case BLURAY_DYNAMIC_RANGE_HDR10:            drStr = "HDR10（需PQ转换）"; break;
+            case BLURAY_DYNAMIC_RANGE_DOLBY_VISION:     drStr = "Dolby Vision（需PQ转换）"; break;
+            default: drStr = "Unknown DYNAMIC RANG";
+          }
+          CLog::Log(LOGDEBUG, "GetStreamInfo - 视频流[PID:{}]动态范围更新为: {}", pid, drStr);
+        }
+
+        break; 
+      }
+    }
+  }
   else if (HDMV_PID_AUDIO_FIRST <= pid && pid <= HDMV_PID_AUDIO_LAST)
     find_stream(pid, m_clip->audio_streams, m_clip->audio_stream_count, language);
   else if (HDMV_PID_PG_FIRST <= pid && pid <= HDMV_PID_PG_LAST)
