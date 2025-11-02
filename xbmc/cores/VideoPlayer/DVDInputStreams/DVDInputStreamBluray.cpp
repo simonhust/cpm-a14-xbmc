@@ -842,21 +842,23 @@ static uint32_t build_rgba(const BD_PG_PALETTE_ENTRY &e,
   if (forceSRGB)
   {
     CLog::Log(LOGDEBUG, "build_rgba: 使用强制 sRGB 转换");
-    // sRGB 基于 BT.709 矩阵，但伽马校正不同
-    // 1. YUV→RGB 转换（使用 BT.709 矩阵）
-    r = 1.164 * y + 0.000 * cb + 1.596 * cr;
-    g = 1.164 * y - 0.391 * cb - 0.813 * cr;
-    b = 1.164 * y + 2.018 * cb + 0.000 * cr;
-
-    // 2. 应用 sRGB 伽马校正（标准化到 [0,1] 后转换）
+    
+    // 修正2：使用正确的BT.709矩阵系数
+    // 参考ITU-R BT.709标准系数
+    r = 1.164 * y + 0.000 * cb + 1.793 * cr;
+    g = 1.164 * y - 0.213 * cb - 0.533 * cr;
+    b = 1.164 * y + 2.112 * cb + 0.000 * cr;
+    
+    // 修正3：sRGB伽马校正应该在0-1范围内进行
     auto srgb_gamma = [](double val) {
-      val = std::clamp(val / 255.0, 0.0, 1.0); // 归一化到 [0,1]
+      val = std::clamp(val, 0.0, 1.0); // 确保在[0,1]范围内
       if (val <= 0.0031308)
         return val * 12.92;
       else
-        return 1.055 * pow(val, 1.0 / 2.4) - 0.055;
+        return 1.055 * std::pow(val, 1.0 / 2.4) - 0.055;
     };
 
+    // 应用sRGB伽马校正并映射到0-255
     r = srgb_gamma(r) * 255.0;
     g = srgb_gamma(g) * 255.0;
     b = srgb_gamma(b) * 255.0;
@@ -870,62 +872,88 @@ static uint32_t build_rgba(const BD_PG_PALETTE_ENTRY &e,
       case BLURAY_VIDEO_FORMAT_576I:
       case BLURAY_VIDEO_FORMAT_480P:
       case BLURAY_VIDEO_FORMAT_576P:
-        // BT.601 矩阵
+        // BT.601 矩阵（标清）
         r = 1.164 * y + 0.000 * cb + 1.596 * cr;
-        g = 1.164 * y - 0.391 * cb - 0.813 * cr;
-        b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+        g = 1.164 * y - 0.392 * cb - 0.813 * cr;
+        b = 1.164 * y + 2.017 * cb + 0.000 * cr;
         break;
       case BLURAY_VIDEO_FORMAT_720P:
       case BLURAY_VIDEO_FORMAT_1080I:
       case BLURAY_VIDEO_FORMAT_1080P:
-        // BT.709 矩阵
-        r = 1.164 * y + 0.000 * cb + 1.596 * cr;
-        g = 1.164 * y - 0.391 * cb - 0.813 * cr;
-        b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+        // BT.709 矩阵（高清）
+        r = 1.164 * y + 0.000 * cb + 1.793 * cr;
+        g = 1.164 * y - 0.213 * cb - 0.533 * cr;
+        b = 1.164 * y + 2.112 * cb + 0.000 * cr;
         break;
       case BLURAY_VIDEO_FORMAT_2160P:
-        // BT.2020 矩阵
-        r = 1.164 * y + 0.000 * cb + 1.678 * cr;
+        // BT.2020 矩阵（超高清）
+        r = 1.164 * y + 0.000 * cb + 1.679 * cr;
         g = 1.164 * y - 0.187 * cb - 0.650 * cr;
-        b = 1.164 * y + 2.142 * cb + 0.000 * cr;
+        b = 1.164 * y + 2.141 * cb + 0.000 * cr;
         break;
       default:
         // 默认 BT.709
-        r = 1.164 * y + 0.000 * cb + 1.596 * cr;
-        g = 1.164 * y - 0.391 * cb - 0.813 * cr;
-        b = 1.164 * y + 2.018 * cb + 0.000 * cr;
+        r = 1.164 * y + 0.000 * cb + 1.793 * cr;
+        g = 1.164 * y - 0.213 * cb - 0.533 * cr;
+        b = 1.164 * y + 2.112 * cb + 0.000 * cr;
         break;
     }
+
+    // 修正4：HDR处理前确保值在合理范围内
+    r = std::clamp(r, 0.0, 1.0);
+    g = std::clamp(g, 0.0, 1.0);
+    b = std::clamp(b, 0.0, 1.0);
 
     // 原有逻辑：根据动态范围决定是否进行 PQ 转换（HDR→SDR）
     if (dynamicRange == BLURAY_DYNAMIC_RANGE_HDR10 || dynamicRange == BLURAY_DYNAMIC_RANGE_DOLBY_VISION)
     {
-      // PQ（感知量化）转 SDR 的转换逻辑
+      CLog::Log(LOGDEBUG, "build_rgba: 应用HDR到SDR转换");
+      
+      // 修正5：改进的PQ逆变换函数
       auto pq_to_linear = [](double val) {
-        val = std::clamp(val / 255.0, 0.0, 1.0); // 归一化到 [0,1]
+        // 归一化到[0,1]范围
+        val = std::clamp(val, 0.0, 1.0);
+        
         const double m1 = 2610.0 / 16384.0;
         const double m2 = 2523.0 / 4096.0 * 128.0;
         const double c1 = 3424.0 / 4096.0;
         const double c2 = 2413.0 / 4096.0 * 32.0;
         const double c3 = 2392.0 / 4096.0 * 32.0;
-
-        double pq = std::pow(val, 1.0 / m2);
-        pq = std::max(pq - c1, 0.0) / (c2 - c3 * pq);
-        return std::pow(pq, 1.0 / m1); // 线性光值
+        
+        double pq_val = std::pow(val, 1.0 / m2);
+        double linear = std::pow((std::max(pq_val - c1, 0.0)) / (c2 - c3 * pq_val), 1.0 / m1);
+        return std::clamp(linear, 0.0, 1.0);
       };
 
-      // 转换后映射到 SDR 的 [0,255] 范围
-      r = pq_to_linear(r) * 255.0;
-      g = pq_to_linear(g) * 255.0;
-      b = pq_to_linear(b) * 255.0;
+      // 修正6：应用色调映射并保持相对亮度关系
+      // 假设字幕的目标亮度为100 nits（可调整）
+      const double target_nits = 100.0;
+      const double max_nits = 10000.0; // HDR最大亮度
+      const double scale_factor = target_nits / max_nits;
+
+      r = pq_to_linear(r) * scale_factor * 255.0;
+      g = pq_to_linear(g) * scale_factor * 255.0;
+      b = pq_to_linear(b) * scale_factor * 255.0;
+    }
+    else
+    {
+      // SDR内容直接映射到0-255
+      r *= 255.0;
+      g *= 255.0;
+      b *= 255.0;
     }
   }
 
+  // 修正7：改进的clamp函数，避免重复计算
+  auto safe_clamp = [](double val) -> uint8_t {
+    return static_cast<uint8_t>(std::clamp(std::round(val), 0.0, 255.0));
+  };
+
   // 确保值在 [0,255] 范围内
-  return static_cast<uint32_t>(e.T)      << PIXEL_ASHIFT
-       | static_cast<uint32_t>(clamp(r)) << PIXEL_RSHIFT
-       | static_cast<uint32_t>(clamp(g)) << PIXEL_GSHIFT
-       | static_cast<uint32_t>(clamp(b)) << PIXEL_BSHIFT;
+  return static_cast<uint32_t>(e.T) << PIXEL_ASHIFT
+       | static_cast<uint32_t>(safe_clamp(r)) << PIXEL_RSHIFT
+       | static_cast<uint32_t>(safe_clamp(g)) << PIXEL_GSHIFT
+       | static_cast<uint32_t>(safe_clamp(b)) << PIXEL_BSHIFT;
 }
 
 
