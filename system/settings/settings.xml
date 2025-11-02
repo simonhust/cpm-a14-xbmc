@@ -968,8 +968,10 @@
             <show more="true" details="true">installed</show>
           </control>
         </setting>
-        <setting id="subtitles.forcepgssrgb" type="bool" label="force sRGB">
+        <setting id="subtitles.forcepgssrgb" type="boolean" label="force sRGB" help="强制字幕使用sRGB色彩空间">
+          <level>0</level>
           <default>false</default>
+          <control type="toggle" />
         </setting>
       </group>
     </category>
