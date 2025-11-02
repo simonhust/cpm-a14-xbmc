@@ -218,7 +218,21 @@ protected:
     void FreeTitleInfo();
     std::unique_ptr<CDVDInputStreamFile> m_pstream;
     std::string m_rootPath;
-    
+
+    void LogColorConversion(const BD_PG_PALETTE_ENTRY& e, double r, double g, double b, 
+                       bd_video_format_e format, bd_dynamic_range_type_e dr, bool forceSRGB)
+    {
+      if (CLog::IsLogLevelLogged(LOGDEBUG) && CLog::IsLogExtraLogged(LOGDEBUG))
+      {
+        CLog::Log(LOGDEBUG, "PGS颜色转换 - 输入YUV: Y={}, Cb={}, Cr={}, T={}", 
+                  e.Y, e.Cb, e.Cr, e.T);
+        CLog::Log(LOGDEBUG, "PGS颜色转换 - 输出RGB: R={}, G={}, B={}", 
+                  static_cast<int>(r), static_cast<int>(g), static_cast<int>(b));
+        CLog::Log(LOGDEBUG, "PGS颜色转换 - 参数: 格式={}, 动态范围={}, 强制sRGB={}", 
+                  static_cast<int>(format), static_cast<int>(dr), forceSRGB);
+      }
+    }
+
     bd_video_format_e m_videoFormat = BLURAY_VIDEO_FORMAT_1080P;
     bd_dynamic_range_type_e m_dynamicRange = BLURAY_DYNAMIC_RANGE_SDR;
 
