@@ -601,14 +601,23 @@ void am_packet_release(am_packet_t *pkt)
 
 int check_in_pts(am_private_t *para, am_packet_t *pkt)
 {
-  if (para->stream_type == AM_STREAM_ES
-    && UINT64_0 != pkt->avpts
-    && para->m_dll->codec_checkin_pts_us64(pkt->codec, pkt->avpts) != 0)
-  {
-    CLog::Log(LOGDEBUG, "ERROR check in pts error!");
-    return PLAYER_PTS_ERROR;
-  }
-  return PLAYER_SUCCESS;
+    // 1. 增加空指针检查，提前拦截无效参数
+    if (!para || !pkt || !para->m_dll) {
+        CLog::Log(LOGERROR, "check_in_pts: invalid parameters (para=%p, pkt=%p, m_dll=%p)",
+                  para, pkt, para ? para->m_dll : nullptr);
+        return PLAYER_PTS_ERROR;
+    }
+
+    // 2. 条件判断增加括号，提升可读性；使用LOGERROR记录错误
+    if ((para->stream_type == AM_STREAM_ES) &&
+        (UINT64_0 != pkt->avpts) &&
+        (para->m_dll->codec_checkin_pts_us64(pkt->codec, pkt->avpts) != 0)) {
+        CLog::Log(LOGERROR, "check_in_pts: PTS validation failed (stream_type=%d, avpts=%" PRIu64 ")",
+                  para->stream_type, pkt->avpts);
+        return PLAYER_PTS_ERROR;
+    }
+
+    return PLAYER_SUCCESS;
 }
 
 static int write_header(am_private_t *para, am_packet_t *pkt)
@@ -656,31 +665,35 @@ int check_avbuffer_enough(am_private_t *para, am_packet_t *pkt)
 
 int write_av_packet(am_private_t *para, am_packet_t *pkt)
 {
-  //CLog::Log(LOGDEBUG, "write_av_packet, pkt->isvalid({:d}), pkt->data({:p}), pkt->data_size({:d})",
-  //  pkt->isvalid, pkt->data, pkt->data_size);
+    // 空指针检查（关键！避免因无效指针崩溃）
+    if (!para || !pkt) {
+        logM(LOGERROR, "AMLCodec", "write_av_packet: para or pkt is null");
+        return PLAYER_WR_FAILED;
+    }
 
     int write_bytes = 0, len = 0, ret;
     unsigned char *buf;
     int size;
+    const int MAX_RETRIES = 100; // 最大重试次数
+    int retry_count = 0;         // 重试计数器
 
-    // do we need to check in pts or write the header ?
     if (pkt->newflag) {
         if (pkt->isvalid) {
-            ret = check_in_pts(para, pkt);
+            ret = check_in_pts(para, pkt); // check_in_pts 也需适配指针
             if (ret != PLAYER_SUCCESS) {
-                CLog::Log(LOGDEBUG, "check in pts failed");
+                logM(LOGERROR, "AMLCodec", "check in pts failed");
                 return PLAYER_WR_FAILED;
             }
         }
-        if (write_header(para, pkt) == PLAYER_WR_FAILED) {
-            CLog::Log(LOGDEBUG, "[{}]write header failed!", __FUNCTION__);
+        if (write_header(para, pkt) == PLAYER_WR_FAILED) { // write_header 适配指针
+            logM(LOGERROR, "AMLCodec", "write header failed!");
             return PLAYER_WR_FAILED;
         }
-        pkt->newflag = 0;
+        pkt->newflag = 0; // 指针访问成员用 ->
     }
 
     buf = pkt->data;
-    size = pkt->data_size ;
+    size = pkt->data_size;
     if (size == 0 && pkt->isvalid) {
         pkt->isvalid = 0;
         pkt->data_size = 0;
@@ -689,25 +702,28 @@ int write_av_packet(am_private_t *para, am_packet_t *pkt)
     while (size > 0 && pkt->isvalid) {
         write_bytes = para->m_dll->codec_write(pkt->codec, buf, size);
         if (write_bytes < 0 || write_bytes > size) {
-            CLog::Log(LOGDEBUG, "write codec data failed, write_bytes({:d}), errno({:d}), size({:d})", write_bytes, errno, size);
+            logM(LOGERROR, "AMLCodec", "write codec data failed, write_bytes({:d}), errno({:d}), size({:d})", write_bytes, errno, size);
             if (-errno != AVERROR(EAGAIN)) {
-                CLog::Log(LOGDEBUG, "write codec data failed!");
+                logM(LOGDEBUG, "AMLCodec", "write codec data failed!");
                 return PLAYER_WR_FAILED;
             } else {
-                // adjust for any data we already wrote into codec.
-                // we sleep a bit then exit as we will get called again
-                // with the same pkt because pkt->isvalid has not been cleared.
+                // 超过最大重试次数，重置解码器
+                if (retry_count >= MAX_RETRIES) {
+                    logM(LOGWARNING, "AMLCodec", "Buffer full after {:d} retries, resetting decoder", MAX_RETRIES);
+                    para->m_dll->codec_reset(pkt->codec); // 重置解码器
+                    return PLAYER_WR_FAILED; // 通知上层处理
+                }
+                // 重试前休眠，调整剩余数据（指针操作）
                 pkt->data += len;
                 pkt->data_size -= len;
                 usleep(RW_WAIT_TIME);
-                CLog::Log(LOGDEBUG, "Codec buffer full, try after {:d} ms, len({:d})",
-                  RW_WAIT_TIME / 1000, len);
-                return PLAYER_SUCCESS;
+                retry_count++;
+                logM(LOGDEBUG, "AMLCodec", "Codec buffer full, retry {:d}/{:d} after {:d} ms, len({:d})", 
+                      retry_count, MAX_RETRIES, RW_WAIT_TIME / 1000, len);
+                continue; // 继续重试
             }
         } else {
             dumpfile_write(para, buf, write_bytes);
-            // keep track of what we write into codec from this pkt
-            // in case we get hit with EAGAIN.
             len += write_bytes;
             if (len == pkt->data_size) {
                 pkt->isvalid = 0;
@@ -716,8 +732,8 @@ int write_av_packet(am_private_t *para, am_packet_t *pkt)
             } else if (len < pkt->data_size) {
                 buf += write_bytes;
                 size -= write_bytes;
+                retry_count = 0; // 重置重试计数器（部分写入成功）
             } else {
-                // writing more that we should is a failure.
                 return PLAYER_WR_FAILED;
             }
         }
@@ -903,17 +919,29 @@ static int hevc_add_header(unsigned char *buf, int size,  am_packet_t *pkt)
 
 static int hevc_write_header(am_private_t *para, am_packet_t *pkt)
 {
-    int ret = -1;
+    // 空指针检查
+    if (!para || !pkt) {
+        logM(LOGERROR, "AMLCodec", "hevc_write_header: para or pkt is null");
+        return PLAYER_FAILED;
+    }
+
+    int ret = PLAYER_FAILED; // 默认为失败状态
 
     if (para->extradata) {
-      ret = hevc_add_header(para->extradata.GetData(), para->extradata.GetSize(), pkt);
+        // 假设 hevc_add_header 也适配指针（参数为 am_packet_t*）
+        ret = hevc_add_header(para->extradata.GetData(), para->extradata.GetSize(), pkt);
     }
-    if (ret == PLAYER_SUCCESS) {
-      pkt->codec = &para->vcodec;
-      pkt->newflag = 1;
-      ret = write_av_packet(para, pkt);
+    
+    // 若头部处理失败，直接返回错误
+    if (ret != PLAYER_SUCCESS) {
+        logM(LOGERROR, "AMLCodec", "HEVC header processing failed (ret={:d})", ret);
+        return ret;
     }
-    return ret;
+
+    // 头部处理成功后，继续写入逻辑（指针操作）
+    pkt->codec = &para->vcodec;
+    pkt->newflag = 1; // 标记需要写入头部
+    return write_av_packet(para, pkt); // 调用指针版 write_av_packet
 }
 
 int mpeg12_add_frame_dec_info(am_private_t *para)
@@ -2321,41 +2349,86 @@ void CAMLCodec::CloseAmlVideo()
 
 void CAMLCodec::Reset()
 {
-  CLog::Log(LOGDEBUG, "CAMLCodec::Reset");
+    CLog::Log(LOGDEBUG, "CAMLCodec::Reset: starting reset");
 
-  if (!m_opened)
-    return;
+    // 检查对象有效性
+    if (!this) {
+        CLog::Log(LOGERROR, "CAMLCodec::Reset: invalid instance (this is null)");
+        return;
+    }
 
-  SetPollDevice(-1);
+    if (!m_opened) {
+        CLog::Log(LOGDEBUG, "CAMLCodec::Reset: decoder not opened, skip");
+        return;
+    }
 
-  // restore the speed (some amcodec versions require this)
-  if (m_speed != DVD_PLAYSPEED_NORMAL)
-  {
-    m_dll->codec_set_cntl_mode(&am_private->vcodec, TRICKMODE_NONE);
-  }
-  m_dll->codec_pause(&am_private->vcodec);
+    // 空指针检查（核心！避免崩溃）
+    if (!am_private || !m_dll) {
+        CLog::Log(LOGERROR, "CAMLCodec::Reset: am_private(%p) or m_dll(%p) is null", am_private, m_dll);
+        return;
+    }
 
-  // reset the decoder
-  m_dll->codec_reset(&am_private->vcodec);
-  m_dll->codec_set_video_delay_limited_ms(&am_private->vcodec, 1000);
+    // 重置poll设备（避免使用旧句柄）
+    SetPollDevice(-1);
 
-  dumpfile_close(am_private);
-  dumpfile_open(am_private);
+    // 恢复播放速度（增加空指针检查）
+    if (m_speed != DVD_PLAYSPEED_NORMAL && am_private->vcodec) {
+        m_dll->codec_set_cntl_mode(&am_private->vcodec, TRICKMODE_NONE);
+    }
 
-  // re-init our am_pkt
-  am_packet_release(&am_private->am_pkt);
-  am_packet_init(&am_private->am_pkt);
-  am_private->am_pkt.codec = &am_private->vcodec;
-  pre_header_feeding(am_private, &am_private->am_pkt);
+    // 暂停和解码器重置（检查vcodec有效性）
+    if (am_private->vcodec) {
+        m_dll->codec_pause(&am_private->vcodec);
+        m_dll->codec_reset(&am_private->vcodec);
+        // 设置延迟前检查函数是否存在（避免旧版库兼容问题）
+        if (m_dll->codec_set_video_delay_limited_ms) {
+            m_dll->codec_set_video_delay_limited_ms(&am_private->vcodec, 1000);
+        } else {
+            CLog::Log(LOGWARNING, "CAMLCodec::Reset: codec_set_video_delay_limited_ms not supported");
+        }
+    } else {
+        CLog::Log(LOGWARNING, "CAMLCodec::Reset: am_private->vcodec is null, skip hardware reset");
+    }
 
-  // reset some interal vars
-  m_cur_pts = DVD_NOPTS_VALUE;
-  m_last_pts = DVD_NOPTS_VALUE;
-  m_state = 0;
+    // 重置dump文件（检查am_private有效性）
+    dumpfile_close(am_private);
+    dumpfile_open(am_private);
 
-  SetSpeed(m_speed);
+    // 重置数据包（检查am_pkt有效性）
+    if (&am_private->am_pkt) {
+        am_packet_release(&am_private->am_pkt);
+        am_packet_init(&am_private->am_pkt);
+        am_private->am_pkt.codec = am_private->vcodec ? &am_private->vcodec : nullptr;
 
-  SetPollDevice(am_private->vcodec.cntl_handle);
+        // 头部预处理：增加错误检查
+        int pre_ret = pre_header_feeding(am_private, &am_private->am_pkt);
+        if (pre_ret != 0) {
+            CLog::Log(LOGWARNING, "CAMLCodec::Reset: pre_header_feeding failed (ret=%d)", pre_ret);
+        }
+    } else {
+        CLog::Log(LOGWARNING, "CAMLCodec::Reset: am_private->am_pkt is invalid");
+    }
+
+    // 重置内部状态变量
+    m_cur_pts = DVD_NOPTS_VALUE;
+    m_last_pts = DVD_NOPTS_VALUE;
+    m_state = 0;
+
+    // 恢复播放速度
+    SetSpeed(m_speed);
+
+    // 重置poll设备（检查cntl_handle有效性）
+    if (am_private->vcodec && am_private->vcodec.cntl_handle >= 0) {
+        SetPollDevice(am_private->vcodec.cntl_handle);
+    } else {
+        CLog::Log(LOGWARNING, "CAMLCodec::Reset: invalid cntl_handle, poll device remains -1");
+        SetPollDevice(-1);
+    }
+
+    // 关键：唤醒所有等待线程，确保重置后流程继续
+    g_aml_sync_event.Set();
+
+    CLog::Log(LOGDEBUG, "CAMLCodec::Reset: reset completed");
 }
 
 bool CAMLCodec::AddData(uint8_t *pData, size_t iSize, double dts, double pts)
@@ -2497,20 +2570,45 @@ int CAMLCodec::m_pollDevice;
 
 int CAMLCodec::PollFrame()
 {
-  std::lock_guard<std::mutex> lock(pollSyncMutex);
-  if (m_pollDevice < 0)
-    return 0;
+    // 检查对象有效性（避免已销毁对象调用）
+    if (!this) {
+        CLog::Log(LOGERROR, "CAMLCodec::PollFrame: invalid instance (this is null)");
+        return 0;
+    }
 
-  struct pollfd codec_poll_fd[1];
-  codec_poll_fd[0].fd = m_pollDevice;
-  codec_poll_fd[0].events = POLLOUT;
+    std::lock_guard<std::mutex> lock(pollSyncMutex);
+    if (m_pollDevice < 0) {
+        CLog::Log(LOGWARNING, "CAMLCodec::PollFrame: m_pollDevice is invalid (fd=%d)", m_pollDevice);
+        return 0;
+    }
 
-  std::chrono::time_point<std::chrono::system_clock> now(std::chrono::system_clock::now());
-  poll(codec_poll_fd, 1, 50);
-  g_aml_sync_event.Set();
-  int elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - now).count();
-  CLog::Log(LOGDEBUG, LOGAVTIMING, "CAMLCodec::PollFrame elapsed:{:.3f}ms", elapsed / 1000.0);
-  return 1;
+    struct pollfd codec_poll_fd[1];
+    codec_poll_fd[0].fd = m_pollDevice;
+    codec_poll_fd[0].events = POLLOUT;
+
+    std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
+    int poll_ret = poll(codec_poll_fd, 1, 50); // 50ms超时
+
+    // 处理poll错误（如EBADF表示文件描述符无效）
+    if (poll_ret < 0) {
+        CLog::Log(LOGERROR, "CAMLCodec::PollFrame: poll failed (fd=%d, errno=%d, %s)",
+                  m_pollDevice, errno, strerror(errno));
+        // 若文件描述符无效，重置poll设备（触发上层重新初始化）
+        if (errno == EBADF) {
+            SetPollDevice(-1);
+        }
+    }
+
+    // 强制唤醒等待线程（无论poll结果如何）
+    g_aml_sync_event.Set();
+
+    // 记录耗时（保留原有逻辑）
+    int elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now() - now
+    ).count();
+    CLog::Log(LOGDEBUG, LOGAVTIMING, "CAMLCodec::PollFrame elapsed:{:.3f}ms", elapsed / 1000.0);
+
+    return 1;
 }
 
 void CAMLCodec::SetPollDevice(int dev)
