@@ -604,7 +604,9 @@ int check_in_pts(am_private_t *para, am_packet_t *pkt)
     // 1. 增加空指针检查，提前拦截无效参数
     if (!para || !pkt || !para->m_dll) {
         CLog::Log(LOGERROR, "check_in_pts: invalid parameters (para=%p, pkt=%p, m_dll=%p)",
-                  para, pkt, para ? para->m_dll : nullptr);
+          static_cast<void*>(para),  // 显式转换为void*
+          static_cast<void*>(pkt),   // 显式转换为void*
+          para ? static_cast<void*>(para->m_dll) : nullptr);  // 转换m_dll
         return PLAYER_PTS_ERROR;
     }
 
@@ -2364,7 +2366,9 @@ void CAMLCodec::Reset()
 
     // 空指针检查（核心！避免崩溃）
     if (!am_private || !m_dll) {
-        CLog::Log(LOGERROR, "CAMLCodec::Reset: am_private(%p) or m_dll(%p) is null", am_private, m_dll);
+        CLog::Log(LOGERROR, "CAMLCodec::Reset: am_private(%p) or m_dll(%p) is null",
+          static_cast<void*>(am_private),  // 转换am_private
+          static_cast<void*>(m_dll));      // 转换m_dll
         return;
     }
 
