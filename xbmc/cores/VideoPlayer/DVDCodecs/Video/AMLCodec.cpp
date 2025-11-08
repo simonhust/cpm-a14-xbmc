@@ -669,7 +669,7 @@ int write_av_packet(am_private_t *para, am_packet_t *pkt)
 {
     // 空指针检查（关键！避免因无效指针崩溃）
     if (!para || !pkt) {
-        logM(LOGERROR, "AMLCodec", "write_av_packet: para or pkt is null");
+        CLog::Log(LOGERROR, "AMLCodec", "write_av_packet: para or pkt is null");
         return PLAYER_WR_FAILED;
     }
 
@@ -683,12 +683,12 @@ int write_av_packet(am_private_t *para, am_packet_t *pkt)
         if (pkt->isvalid) {
             ret = check_in_pts(para, pkt); // check_in_pts 也需适配指针
             if (ret != PLAYER_SUCCESS) {
-                logM(LOGERROR, "AMLCodec", "check in pts failed");
+                CLog::Log(LOGERROR, "AMLCodec", "check in pts failed");
                 return PLAYER_WR_FAILED;
             }
         }
         if (write_header(para, pkt) == PLAYER_WR_FAILED) { // write_header 适配指针
-            logM(LOGERROR, "AMLCodec", "write header failed!");
+            CLog::Log(LOGERROR, "AMLCodec", "write header failed!");
             return PLAYER_WR_FAILED;
         }
         pkt->newflag = 0; // 指针访问成员用 ->
@@ -704,7 +704,7 @@ int write_av_packet(am_private_t *para, am_packet_t *pkt)
     while (size > 0 && pkt->isvalid) {
         write_bytes = para->m_dll->codec_write(pkt->codec, buf, size);
         if (write_bytes < 0 || write_bytes > size) {
-            logM(LOGERROR, "AMLCodec", "write codec data failed, write_bytes({:d}), errno({:d}), size({:d})", write_bytes, errno, size);
+            CLog::Log(LOGERROR, "AMLCodec", "write codec data failed, write_bytes({:d}), errno({:d}), size({:d})", write_bytes, errno, size);
             if (-errno != AVERROR(EAGAIN)) {
                 logM(LOGDEBUG, "AMLCodec", "write codec data failed!");
                 return PLAYER_WR_FAILED;
@@ -923,7 +923,7 @@ static int hevc_write_header(am_private_t *para, am_packet_t *pkt)
 {
     // 空指针检查
     if (!para || !pkt) {
-        logM(LOGERROR, "AMLCodec", "hevc_write_header: para or pkt is null");
+        CLog::Log(LOGERROR, "AMLCodec", "hevc_write_header: para or pkt is null");
         return PLAYER_FAILED;
     }
 
@@ -936,7 +936,7 @@ static int hevc_write_header(am_private_t *para, am_packet_t *pkt)
     
     // 若头部处理失败，直接返回错误
     if (ret != PLAYER_SUCCESS) {
-        logM(LOGERROR, "AMLCodec", "HEVC header processing failed (ret={:d})", ret);
+        CLog::Log(LOGERROR, "AMLCodec", "HEVC header processing failed (ret={:d})", ret);
         return ret;
     }
 
@@ -2376,7 +2376,7 @@ void CAMLCodec::Reset()
     SetPollDevice(-1);
 
     // 恢复播放速度（增加空指针检查）
-    if (m_speed != DVD_PLAYSPEED_NORMAL && am_private->vcodec) {
+    if (m_speed != DVD_PLAYSPEED_NORMAL && am_private->vcodec.handle != -1) {
         m_dll->codec_set_cntl_mode(&am_private->vcodec, TRICKMODE_NONE);
     }
 
@@ -2385,7 +2385,7 @@ void CAMLCodec::Reset()
         m_dll->codec_pause(&am_private->vcodec);
         m_dll->codec_reset(&am_private->vcodec);
         // 设置延迟前检查函数是否存在（避免旧版库兼容问题）
-        if (m_dll->codec_set_video_delay_limited_ms) {
+        if (m_dll && m_dll->IsLoaded()) {
             m_dll->codec_set_video_delay_limited_ms(&am_private->vcodec, 1000);
         } else {
             CLog::Log(LOGWARNING, "CAMLCodec::Reset: codec_set_video_delay_limited_ms not supported");
@@ -2399,18 +2399,15 @@ void CAMLCodec::Reset()
     dumpfile_open(am_private);
 
     // 重置数据包（检查am_pkt有效性）
-    if (&am_private->am_pkt) {
-        am_packet_release(&am_private->am_pkt);
-        am_packet_init(&am_private->am_pkt);
-        am_private->am_pkt.codec = am_private->vcodec ? &am_private->vcodec : nullptr;
-
-        // 头部预处理：增加错误检查
-        int pre_ret = pre_header_feeding(am_private, &am_private->am_pkt);
-        if (pre_ret != 0) {
-            CLog::Log(LOGWARNING, "CAMLCodec::Reset: pre_header_feeding failed (ret=%d)", pre_ret);
-        }
-    } else {
-        CLog::Log(LOGWARNING, "CAMLCodec::Reset: am_private->am_pkt is invalid");
+    am_packet_release(&am_private->am_pkt);
+    am_packet_init(&am_private->am_pkt);
+    // 修正vcodec的有效性判断（使用handle成员）
+    am_private->am_pkt.codec = (am_private->vcodec.handle != -1) ? &am_private->vcodec : nullptr;
+    
+    // 头部预处理：增加错误检查
+    int pre_ret = pre_header_feeding(am_private, &am_private->am_pkt);
+    if (pre_ret != 0) {
+        CLog::Log(LOGWARNING, "CAMLCodec::Reset: pre_header_feeding failed (ret=%d)", pre_ret);
     }
 
     // 重置内部状态变量
@@ -2574,12 +2571,6 @@ int CAMLCodec::m_pollDevice;
 
 int CAMLCodec::PollFrame()
 {
-    // 检查对象有效性（避免已销毁对象调用）
-    if (!this) {
-        CLog::Log(LOGERROR, "CAMLCodec::PollFrame: invalid instance (this is null)");
-        return 0;
-    }
-
     std::lock_guard<std::mutex> lock(pollSyncMutex);
     if (m_pollDevice < 0) {
         CLog::Log(LOGWARNING, "CAMLCodec::PollFrame: m_pollDevice is invalid (fd=%d)", m_pollDevice);
