@@ -711,7 +711,7 @@ int write_av_packet(am_private_t *para, am_packet_t *pkt)
             } else {
                 // 超过最大重试次数，重置解码器
                 if (retry_count >= MAX_RETRIES) {
-                    logM(LOGWARNING, "AMLCodec", "Buffer full after {:d} retries, resetting decoder", MAX_RETRIES);
+                    CLog::Log(LOGERROR,, "AMLCodec", "Buffer full after {:d} retries, resetting decoder", MAX_RETRIES);
                     para->m_dll->codec_reset(pkt->codec); // 重置解码器
                     return PLAYER_WR_FAILED; // 通知上层处理
                 }
