@@ -706,7 +706,7 @@ int write_av_packet(am_private_t *para, am_packet_t *pkt)
         if (write_bytes < 0 || write_bytes > size) {
             CLog::Log(LOGERROR, "AMLCodec", "write codec data failed, write_bytes({:d}), errno({:d}), size({:d})", write_bytes, errno, size);
             if (-errno != AVERROR(EAGAIN)) {
-                logM(LOGDEBUG, "AMLCodec", "write codec data failed!");
+                CLog::Log(LOGERROR, "AMLCodec", "write codec data failed!");
                 return PLAYER_WR_FAILED;
             } else {
                 // 超过最大重试次数，重置解码器
@@ -720,7 +720,7 @@ int write_av_packet(am_private_t *para, am_packet_t *pkt)
                 pkt->data_size -= len;
                 usleep(RW_WAIT_TIME);
                 retry_count++;
-                logM(LOGDEBUG, "AMLCodec", "Codec buffer full, retry {:d}/{:d} after {:d} ms, len({:d})", 
+                CLog::Log(LOGERROR, "AMLCodec", "Codec buffer full, retry {:d}/{:d} after {:d} ms, len({:d})", 
                       retry_count, MAX_RETRIES, RW_WAIT_TIME / 1000, len);
                 continue; // 继续重试
             }
