@@ -2381,7 +2381,7 @@ void CAMLCodec::Reset()
     }
 
     // 暂停和解码器重置（检查vcodec有效性）
-    if (am_private->vcodec) {
+    if (am_private->vcodec.handle != -1) {
         m_dll->codec_pause(&am_private->vcodec);
         m_dll->codec_reset(&am_private->vcodec);
         // 设置延迟前检查函数是否存在（避免旧版库兼容问题）
@@ -2419,7 +2419,7 @@ void CAMLCodec::Reset()
     SetSpeed(m_speed);
 
     // 重置poll设备（检查cntl_handle有效性）
-    if (am_private->vcodec && am_private->vcodec.cntl_handle >= 0) {
+    if (am_private->vcodec.handle != -1 && am_private->vcodec.cntl_handle >= 0) {
         SetPollDevice(am_private->vcodec.cntl_handle);
     } else {
         CLog::Log(LOGWARNING, "CAMLCodec::Reset: invalid cntl_handle, poll device remains -1");
