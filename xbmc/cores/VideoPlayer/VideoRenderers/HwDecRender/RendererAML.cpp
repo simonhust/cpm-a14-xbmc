@@ -7,6 +7,7 @@
  */
 
 #include "RendererAML.h"
+#include "ServiceBroker.h"
 
 #include "cores/VideoPlayer/DVDCodecs/Video/DVDVideoCodecAmlogic.h"
 #include "cores/VideoPlayer/DVDCodecs/Video/AMLCodec.h"
@@ -17,6 +18,7 @@
 #include "cores/VideoPlayer/VideoRenderers/RenderCapture.h"
 #include "cores/VideoPlayer/VideoRenderers/RenderFactory.h"
 #include "cores/VideoPlayer/VideoRenderers/RenderFlags.h"
+#include "cores/DataCacheCore.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
@@ -63,8 +65,8 @@ bool CRendererAML::Configure(const VideoPicture &picture, float fps, unsigned in
   CalculateFrameAspectRatio(picture.iDisplayWidth, picture.iDisplayHeight);
   SetViewMode(m_videoSettings.m_ViewMode);
   ManageRenderArea();
-
- aml_set_transfer_pq(picture.hdrType, picture.iBitDepth);
+ 
+  aml_set_transfer_pq(CServiceBroker::GetDataCacheCore().GetVideoHdrType(), CServiceBroker::GetDataCacheCore().GetVideoBitDepth());
 
   CServiceBroker::GetWinSystem()->GetGfxContext().SetTransferPQ(dv_is_used | hdr_is_used);
 
