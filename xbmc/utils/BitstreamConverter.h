@@ -209,3 +209,5 @@ protected:
   bool              m_first_frame;
   HDRStaticMetadataInfo m_hdrStaticMetadataInfo;
 };
+
+void aml_dv_hdr10plus_conversion(bool hdr10plus_conversion);

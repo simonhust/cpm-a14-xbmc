@@ -133,20 +133,35 @@ void write_rpu(BitstreamIoWriter& writer, VdrDmData& vdr_dm_data) {
 
     writer.write_n<uint16_t>(42, 10);           // (0000101010) source_diagonal (display diagonal in inches - TODO: Any effect?)
 
+    // Total Bits Up to this point = 801 Bits
+
     writer.write_ue(3);                         // (00100)      num_ext_blocks (5 bits)
+    // writer.write_ue(7);                         // (0000111)    num_ext_blocks (7 bits)
 
     writer.byte_align();                        // dm_alignment_zero_bit
 
     // L1 -----------
-    writer.write_ue(5);                         // (00110)          length_bytes
+    writer.write_ue(5);                         // (00101)          length_bytes
     writer.write_n<uint8_t>(1, 8);              // (00000001)       level
     writer.write_n<uint16_t>(vdr_dm_data.min_pq, 12);
     writer.write_n<uint16_t>(vdr_dm_data.max_pq, 12);
     writer.write_n<uint16_t>(vdr_dm_data.avg_pq, 12);
     writer.write_n<uint8_t>(0, 4);              // (0000)           alignment of 4 bits.
 
+    // L1 Total Bits = 53 Bits
+
+    // L3 -----------
+//    writer.write_ue(5);                         // (00101)          length_bytes
+//    writer.write_n<uint8_t>(3, 8);              // (00000011)       level
+//    writer.write_n<uint16_t>(2048, 12);         // (100000000000)
+//    writer.write_n<uint16_t>(2048, 12);         // (100000000000)
+//    writer.write_n<uint16_t>(2048, 12);         // (100000000000)
+//    writer.write_n<uint8_t>(0, 4);              // (0000)           alignment of 4 bits.
+
+    // L3 Total Bits = 53 Bits
+
     // L5 -----------
-    writer.write_ue(7);                         // (0001000)        length_bytes
+    writer.write_ue(7);                         // (0000111)        length_bytes
     writer.write_n<uint8_t>(5, 8);              // (00000101)       level
     writer.write_n<uint16_t>(0, 13);            // (0000000000000)  active_area_left_offset
     writer.write_n<uint16_t>(0, 13);            // (0000000000000)  active_area_right_offset
@@ -154,13 +169,42 @@ void write_rpu(BitstreamIoWriter& writer, VdrDmData& vdr_dm_data) {
     writer.write_n<uint16_t>(0, 13);            // (0000000000000)  active_area_bottom_offset
     writer.write_n<uint8_t>(0, 4);              // (0000)           alignment of 4 bits.
 
+    // L5 Total Bits = 71 Bits
+
     // L6 -----------
-    writer.write_ue(8);                         // (0001001)        length_bytes
+    writer.write_ue(8);                         // (0001000)        length_bytes
     writer.write_n<uint8_t>(6, 8);              // (00000110)       level
     writer.write_n<uint16_t>(vdr_dm_data.max_display_mastering_luminance, 16);
     writer.write_n<uint16_t>(vdr_dm_data.min_display_mastering_luminance, 16);
     writer.write_n<uint16_t>(vdr_dm_data.max_content_light_level, 16);
     writer.write_n<uint16_t>(vdr_dm_data.max_frame_average_light_level, 16);
+
+    // L6 Total Bits = 79 Bits
+
+    // L9 -----------
+//    writer.write_ue(1);                         // (001)            length_bytes
+//    writer.write_n<uint8_t>(9, 8);              // (00001001)       level
+//    writer.write_n<uint8_t>(0, 8);              // (00000000)       source_primary_index
+
+    // L9 Total Bits = 19 Bits
+
+    // L11 -----------
+//    writer.write_ue(4);                         // (00100)          length_bytes
+//    writer.write_n<uint8_t>(11, 8);             // (00001011)       level
+//    writer.write_n<uint8_t>(1, 8);              // (00000001)       content_type
+//    writer.write_n<uint8_t>(0, 8);              // (00000000)       whitepoint
+//    writer.write_n<uint8_t>(0, 8);              // (00000000)       reserved_byte2
+//    writer.write_n<uint8_t>(0, 8);              // (00000000)       reserved_byte3
+
+    // L11 Total Bits = 45 Bits
+
+    // L254 -----------
+//    writer.write_ue(2);                         // (010)            length_bytes
+//    writer.write_n<uint8_t>(254, 8);            // (11111110)       level
+//    writer.write_n<uint8_t>(0, 8);              // (00000000)       dm_mode
+//    writer.write_n<uint8_t>(2, 8);              // (00000010)       dm_version_index
+
+    // L254 Total Bits = 27 Bits
 
     writer.byte_align();                        // ext_dm_alignment_zero_bit
 };
@@ -227,7 +271,8 @@ static uint32_t calc_crc32(const void *data, size_t data_size)
 
 std::vector<uint8_t> create_rpu_nalu(VdrDmData& vdr_dm_data) {
 
-  // Dolby Vision profile 8.1 133 Bytes long.
+  // Dolby Vision profile 8.1 133/152 Bytes long.
+// BitstreamIoWriter writer(152);
   BitstreamIoWriter writer(133);
 
   writer.write_n<uint8_t>(0x19, 8);  // RPU prefix

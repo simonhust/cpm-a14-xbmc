@@ -1472,6 +1472,10 @@ std::string aml_video_fps_drop() {
   return format_fps_info().drop_info;
 }
 
+void aml_dv_hdr10plus_conversion (bool hdr10plus_conversion) {
+  CSysfsPath("/sys/module/amdolby_vision/parameters/xbmc_dv_hdr10plus_conv", hdr10plus_conversion);
+}
+
 void aml_toogle_video_freerun_mode() 
 {
   CSysfsPath freerun_mode{"/sys/class/video/freerun_mode"};

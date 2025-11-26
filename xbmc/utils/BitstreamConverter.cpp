@@ -37,6 +37,8 @@ extern "C"
 #endif
 }
 
+static bool hdr10plus_conversion = false;
+
 enum {
   AVC_NAL_SLICE=1,
   AVC_NAL_DPA,
@@ -379,6 +381,8 @@ static void get_dovi_rpu_info(uint8_t* nal_buf, uint32_t nal_size, bool first_fr
     std::string meta_version = "";
     if (vdr_dm_data && vdr_dm_data->dm_data.level254)
     {
+      hdr10plus_conversion = false;
+      aml_dv_hdr10plus_conversion(hdr10plus_conversion); 
       unsigned int noL8 = vdr_dm_data->dm_data.level8.len;
       if (noL8 > 0)
         meta_version = fmt::format("CMv4.0 {}-{} {}-L8", 
@@ -390,14 +394,27 @@ static void get_dovi_rpu_info(uint8_t* nal_buf, uint32_t nal_size, bool first_fr
                                   vdr_dm_data->dm_data.level254->dm_version_index, 
                                   vdr_dm_data->dm_data.level254->dm_mode);
     }
+    else if (hdr10plus_conversion)
+    {
+      hdr10plus_conversion = false;
+      meta_version = fmt::format("CMv4.0 {}-{}", 2, 0);
+    }
     else if (vdr_dm_data && vdr_dm_data->dm_data.level1)
     {
+      hdr10plus_conversion = false;
+      aml_dv_hdr10plus_conversion(hdr10plus_conversion);
       unsigned int noL2 = vdr_dm_data->dm_data.level2.len;
       if (noL2 > 0)
         meta_version = fmt::format("CMv2.9 {}-L2", noL2);
       else 
         meta_version = "CMv2.9";
     }
+    else
+    {
+      hdr10plus_conversion = false;
+      aml_dv_hdr10plus_conversion(hdr10plus_conversion);
+    }
+	
     dovi_stream_metadata.meta_version = meta_version;
     dataCacheCore.SetVideoDoViStreamMetadata(dovi_stream_metadata);
 
@@ -1256,6 +1273,8 @@ void CBitstreamConverter::AddDoViRpuNalu(const Hdr10PlusMetadata& meta, uint8_t 
       m_hints.dovi.el_present_flag = 0;
       m_hints.dovi.bl_present_flag = 1;
       m_hints.dovi.dv_bl_signal_compatibility_id = 1;
+      hdr10plus_conversion = true;
+      aml_dv_hdr10plus_conversion(hdr10plus_conversion);
     }
 
 #ifdef HAVE_LIBDOVI
