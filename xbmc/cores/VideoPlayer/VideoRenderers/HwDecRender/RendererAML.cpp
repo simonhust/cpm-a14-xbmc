@@ -67,9 +67,7 @@ bool CRendererAML::Configure(const VideoPicture &picture, float fps, unsigned in
   ManageRenderArea();
  
   aml_set_transfer_pq(CServiceBroker::GetDataCacheCore().GetVideoHdrType(), CServiceBroker::GetDataCacheCore().GetVideoBitDepth());
-
-  CServiceBroker::GetWinSystem()->GetGfxContext().SetTransferPQ(dv_is_used | hdr_is_used);
-
+ 
   m_bConfigured = true;
 
   return true;
