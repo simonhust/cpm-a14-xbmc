@@ -64,15 +64,22 @@ bool CRendererAML::Configure(const VideoPicture &picture, float fps, unsigned in
   SetViewMode(m_videoSettings.m_ViewMode);
   ManageRenderArea();
 
- // Configure GUI/OSD for HDR PQ when display is in HDR PQ mode
-  bool device_support_dv(aml_support_dolby_vision());
-  bool user_dv_disable(CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(CSettings::SETTING_COREELEC_AMLOGIC_DV_DISABLE));
-  bool dv_is_used(device_support_dv && !user_dv_disable &&
-    picture.hdrType == StreamHdrType::HDR_TYPE_DOLBYVISION && aml_display_support_dv());
-  bool hdr_is_used((picture.hdrType == StreamHdrType::HDR_TYPE_HLG || picture.color_transfer == AVCOL_TRC_SMPTE2084) &&
-    CServiceBroker::GetWinSystem()->IsHDRDisplay());
-  CLog::Log(LOGDEBUG, "CRendererAML::Configure {}DV support, {}, DV system is {}, HDR is {}", device_support_dv ? "" : "no ",
-    user_dv_disable ? "disabled" : "enabled", dv_is_used ? "enabled" : "disabled", hdr_is_used ? "used" : "not used");
+ // according to cpm dv state:on,off,on demand
+  bool device_support_dv = aml_support_dolby_vision();
+  DV_MODE current_dv_mode = aml_dv_mode();
+  bool dv_is_used = device_support_dv &&
+                    (current_dv_mode == DV_MODE::ON || current_dv_mode == DV_MODE::ON_DEMAND) &&
+                    picture.hdrType == StreamHdrType::HDR_TYPE_DOLBYVISION &&
+                    aml_display_support_dv();
+  bool hdr_is_used = (picture.hdrType == StreamHdrType::HDR_TYPE_HLG || 
+                      picture.color_transfer == AVCOL_TRC_SMPTE2084) &&
+                     CServiceBroker::GetWinSystem()->IsHDRDisplay();
+
+  CLog::Log(LOGDEBUG, "CRendererAML::Configure: DV_SUPPORTED={}, CURRENT_DV_MODE={}, DV_IS_USED={}, HDR_IS_USED={}",
+            device_support_dv ? "YES" : "NO",
+            (current_dv_mode == DV_MODE::ON) ? "ON" : (current_dv_mode == DV_MODE::ON_DEMAND) ? "ON_DEMAND" : "OFF",
+            dv_is_used ? "YES" : "NO",
+            hdr_is_used ? "YES" : "NO");
 
   CServiceBroker::GetWinSystem()->GetGfxContext().SetTransferPQ(dv_is_used | hdr_is_used);
 
