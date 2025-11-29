@@ -1919,6 +1919,7 @@ bool CAMLCodec::OpenDecoder()
 {
   m_speed = DVD_PLAYSPEED_NORMAL;
   m_drain = false;
+  m_vadj1_enabled = false;
   m_cur_pts = DVD_NOPTS_VALUE;
   m_dst_rect.SetRect(0, 0, 0, 0);
   CDVDStreamInfo &hints = m_hints;  // Fudge to avoid large chnage delta renaming hints to m_hints.
@@ -2247,6 +2248,43 @@ bool CAMLCodec::OpenAmlVideo(const CDVDStreamInfo &hints)
 
   m_amlVideoFile = amlVideoFile;
   m_defaultVfmMap = GetVfmMap("default");
+
+  return true;
+}
+
+bool CAMLCodec::Enable_vadj1(void)
+{
+  struct vpp_pq_ctrl_s vpp_pq_ctrl = {};
+  struct pq_ctrl_s pq_ctrl = {};
+  vpp_pq_ctrl.length = sizeof(struct pq_ctrl_s);
+  vpp_pq_ctrl.ptr = (void *)&pq_ctrl;
+
+  PosixFilePtr amvecm = std::make_shared<PosixFile>();
+  if (!amvecm->Open("/dev/amvecm", O_RDWR))
+  {
+    CLog::Log(LOGERROR, "CAMLCodec::Enable_vadj1 - cannot open amvecm driver /dev/amvecm: {}", strerror(errno));
+    return false;
+  }
+
+  if (amvecm->IOControl(AMVECM_IOC_G_PQ_CTRL, &vpp_pq_ctrl) < 0)
+  {
+    CLog::Log(LOGERROR, "CAMLCodec::Enable_vadj1 - AMVECM_IOC_G_PQ_CTRL failed: {}", strerror(errno));
+    return false;
+  }
+
+  // enable vadj1 brightness and contrast control
+  if (pq_ctrl.vadj1_en != 1)
+  {
+    pq_ctrl.vadj1_en = 1;
+
+    if (amvecm->IOControl(AMVECM_IOC_S_PQ_CTRL, &vpp_pq_ctrl) < 0)
+    {
+      CLog::Log(LOGERROR, "CAMLCodec::Enable_vadj1 - AMVECM_IOC_S_PQ_CTRL failed: {}", strerror(errno));
+      return false;
+    }
+
+    CLog::Log(LOGINFO, "CAMLCodec::Enable_vadj1 - vadj1 brightness/contrast control got enabled");
+  }
 
   return true;
 }
@@ -2728,6 +2766,10 @@ void CAMLCodec::SetVideoRect(const CRect &SrcRect, const CRect &DestRect)
   // and is in the context of the renderer thread so
   // do not do anything stupid here.
   bool update = false;
+
+  // enable vadj1
+  if (!m_vadj1_enabled)
+    m_vadj1_enabled = Enable_vadj1();
 
   // video rate adjustment.
   unsigned int video_rate = GetDecoderVideoRate();
