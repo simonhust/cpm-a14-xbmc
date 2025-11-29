@@ -64,6 +64,7 @@ public:
   virtual ~CAMLCodec();
 
   bool          OpenDecoder();
+  bool          Enable_vadj1();
   void          CloseDecoder();
   void          Reset();
 
