@@ -982,6 +982,28 @@ CVideoPlayerVideo::EOutputState CVideoPlayerVideo::OutputPicture(const VideoPict
 
   iPlayingClock = m_pClock->GetClock(iCurrentClock, false); // snapshot current clock
 
+  if (m_speed < 0)
+  {
+    double renderPts;
+    int queued, discard;
+    int lateframes;
+    double inputPts = m_droppingStats.m_lastPts;
+    m_renderManager.GetStats(lateframes, renderPts, queued, discard);
+    if (pPicture->pts > renderPts || queued > 0)
+    {
+      if (inputPts >= renderPts)
+      {
+        m_rewindStalled = true;
+        CThread::Sleep(50ms);
+      }
+      return OUTPUT_DROPPED;
+    }
+    else if (pPicture->pts < iPlayingClock)
+    {
+      return OUTPUT_DROPPED;
+    }
+  }
+
   if ((pPicture->iFlags & DVP_FLAG_DROPPED))
   {
     m_droppingStats.AddOutputDropGain(pPicture->pts, 1);
